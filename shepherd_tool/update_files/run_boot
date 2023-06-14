@@ -1,0 +1,7 @@
+#!/bin/bash
+export SHEPHERD_HOME=$HOME/shepherd
+export SHEPHERD_DATA=$SHEPHERD_HOME/data
+export PYTHONPATH=$HOME/shepherd
+export PYTHONPATH=$HOME/shepherd/web:$PYTHONPATH
+$HOME/shepherd/env/bin/python -Bu -m server.mesh_device_manager &
+$HOME/shepherd/env/bin/python -Bu -m server.tcp_server

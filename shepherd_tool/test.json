@@ -1,0 +1,15 @@
+{
+    "192.168.10.26": {
+      "id": "192.168.10.26",
+      "ip": "192.168.10.26",
+      "name": "Scape",
+      "key": "strive",
+      "camera": {
+        "type": "Axis",
+        "username": "root",
+        "password": "strive",
+        "address": "192.168.10.42",
+        "url": "rtsp://root:strive@192.168.10.42/axis-media/media.amp"
+      }
+    }
+  }

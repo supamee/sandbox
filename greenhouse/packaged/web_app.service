@@ -1,0 +1,14 @@
+[Unit]
+Description=shepherd service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=root
+Environment="PYTHONPATH=/home/pi/sand:/greenhouse/pip:/home/pi/.local/lib/python3.9/site-packages:$PYTHONPATH"
+WorkingDirectory=/home/pi/sand
+ExecStart=/home/pi/sand/run_web.sh
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

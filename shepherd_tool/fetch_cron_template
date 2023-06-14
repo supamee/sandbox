@@ -1,0 +1,6 @@
+# /etc/cron.d/anacron: crontab entries for the auto fetch shepherd data 
+
+SHELL=/bin/sh
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+0 TIME * * *   cd USER/shepherd/shepherd_tool && source ../env/bin/activate && python auto_fetch.py DEVICE NAME IP 1440
