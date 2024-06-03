@@ -1,0 +1,418 @@
+// C include
+#include <string.h>
+#include <time.h>
+
+// C++ include
+#include <vector>
+
+// serial include
+#include "ark_serial.h"
+
+// LoRa include
+#include <SPI.h>
+#include <RH_RF95.h>
+#include <RHMesh.h>
+#include "ark_lora_lib.h"
+
+// display include
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+// Define OLED PIN
+#define OLED_SDA 21
+#define OLED_SCL 22
+#define OLED_RST -1
+
+// pin numbers for lilygo
+#define RFM95_CS 18  // lora cs pin
+#define RFM95_INT 26 // lora interrupt
+#define RFM95_RST 23 // lora reset
+
+// pin numbers for feather
+// #define RFM95_CS    8
+// #define RFM95_INT   3
+// #define RFM95_RST   4 //reset pin
+
+// program by human
+const uint8_t lora_address = 2; // TODO: change to not constant and programmable by sentry
+
+// if connected sentry is connected to internet
+bool connected_to_internet = false;
+
+// rf95 driver
+RH_RF95 rf95(RFM95_CS, RFM95_INT);
+// rh mesh manager
+RHMesh rhmesh(rf95, lora_address);
+
+Adafruit_SSD1306 display(128, 64, &Wire, OLED_RST);
+
+// lora addresses of all nodes with internet
+std::vector<uint8_t> internet_nodes;
+
+// idx of internet node that lora is transmitting data to
+uint8_t internet_node_idx = 0;
+
+// whether lora has list of internet node addresses, as rhmesh takes care of meshing
+bool connected_to_network;
+
+// current serial device to read from, options are unknown, usb, or pins, will automatically set to first read
+SERIAL_DEVICES serial_device = UNKNOWN;
+
+// determines if vector contains an element
+// used for the case where lora gets multiple messages containing duplicate internet nodes
+bool vector_contains(std::vector<uint8_t> vec, uint8_t el)
+{
+  auto it = std::find(vec.begin(), vec.end(), el);
+  return it != vec.end();
+}
+
+void display_msg(const char message[], int16_t cursor_x, int16_t cursor_y)
+{
+  display.setTextColor(WHITE);
+  display.setTextSize(1);
+  display.setCursor(cursor_x, cursor_y);
+  display.println(message);
+  display.display();
+}
+
+void display_id()
+{
+  char id_message[6] = "ID:  ";
+  itoa(lora_address, id_message + 5, 10);
+
+  display_msg(id_message, 0, 0);
+}
+
+void update_display_with_id(const char message[])
+{
+  display.clearDisplay();
+  display_id();
+  display_msg(message, 0, 30);
+}
+
+void setup_display()
+{
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3c))
+  {
+    for (;;)
+      Serial.println(F("SSD1306 allocation failed"));
+    // Don't proceed further, loop forever
+  }
+}
+
+void setup_lora()
+{
+  rhmesh.setThisAddress(lora_address); // set to default
+  rhmesh.setRetries(MSG_RETRY_ATTEMPTS);
+  rhmesh.setMaxHops(MSG_MAX_HOPS);
+  pinMode(RFM95_RST, OUTPUT);
+  digitalWrite(RFM95_RST, HIGH);
+
+  // manual reset of lora module
+  digitalWrite(RFM95_RST, LOW);
+  delay(10);
+  digitalWrite(RFM95_RST, HIGH);
+  delay(10);
+
+  while (!rhmesh.init())
+  {
+    Serial.println("LoRa radio init failed");
+    Serial.println("Uncomment '#define SERIAL_DEBUG' in RH_RF95.cpp for detailed debug info");
+    while (1)
+      ;
+  }
+  Serial.println("LoRa radio init OK!");
+
+  if (!rf95.setFrequency(RF95_FREQ))
+  {
+    Serial.println("setFrequency failed");
+    while (1)
+      ;
+  }
+  Serial.print("Set Freq to: ");
+  Serial.println(RF95_FREQ);
+
+  // The default transmitter power is 13dBm, using PA_BOOST.
+  // If you are using RFM95/96/97/98 modules which uses the PA_BOOST transmitter pin, then
+  // you can set transmitter powers from 5 to 23 dBm:
+  rf95.setTxPower(23, false);
+}
+
+void setup()
+{
+  srand(time(NULL));
+  Serial.begin(
+    
+  );  // usb
+  Serial1.begin(115200); // uart pins
+  delay(100);
+
+  setup_display();
+  display.clearDisplay();
+  display_id();
+
+  setup_lora();
+  connected_to_network = internet_nodes.size() != 0;
+}
+
+// transmits message
+uint8_t transmit_lora(uint8_t msg[], uint8_t msg_len, uint8_t dest)
+{
+  return rhmesh.sendtoWait(msg, msg_len, dest); // refer to rhmesh documentation for error codes
+}
+
+time_t health_start_time = time(NULL);
+time_t discover_start_time = time(NULL);
+time_t network_health_start_time = time(NULL);
+time_t status_start_time = time(NULL);
+
+void loop()
+{
+  connected_to_network = internet_nodes.size() != 0; // updates network status
+
+  // frequency based messages
+  // send health message through serial to sentry
+  if (time(NULL) - health_start_time > HEALTH_MSG_FREQ)
+  {
+    health_message_t health_message = {
+        (message_header_t){HEALTH}, lora_address, (HEALTH_STATUS)connected_to_internet};
+
+    uint8_t msg_buffer[RH_MAX_MESSAGE_LEN];
+    uint8_t msg_len = write_message(msg_buffer, (message_t *)(&health_message));
+    write_to_serial(msg_buffer, msg_len);
+    health_start_time = time(NULL);
+  }
+
+  // sends discover message if not connected to network
+  if (!connected_to_network && time(NULL) - discover_start_time > DISCOVER_MSG_FREQ)
+  {
+    discover_message_t discover_msg = {(message_header_t){DISCOVER}};
+    uint8_t msg_buf[RH_MAX_MESSAGE_LEN];
+    uint8_t msg_len = write_message(msg_buf, (message_t *)(&discover_msg));
+    transmit_lora(msg_buf, msg_len, RH_BROADCAST_ADDRESS);
+
+    discover_start_time = time(NULL);
+  }
+
+  // sends network connection health message to internet node its transmitting to
+  if (connected_to_network && !connected_to_internet && time(NULL) - network_health_start_time > NETWORK_HEALTH_MSG_FREQ)
+  {
+    health_network_message_t health_network_msg = {(message_header_t){HEALTH_NETWORK}, lora_address};
+    uint8_t msg_buf[RH_MAX_MESSAGE_LEN];
+    uint8_t msg_len = write_message(msg_buf, (message_t *)(&health_network_msg));
+
+    // if transmit failes, remove internet node from vector
+    if (transmit_lora(msg_buf, msg_len, internet_nodes.at(internet_node_idx)) != RH_ROUTER_ERROR_NONE)
+    {
+      internet_nodes.erase(internet_nodes.begin() + internet_node_idx);
+    }
+
+    network_health_start_time = time(NULL);
+  }
+
+  // for debugging purposes, prints network status of lora
+  if (time(NULL) - status_start_time > 5)
+  {
+    if (connected_to_internet)
+    {
+      update_display_with_id("Connected to internet");
+    }
+    else if (connected_to_network)
+    {
+      update_display_with_id("Connected to network");
+    }
+    else
+    {
+      update_display_with_id("Not connected");
+    }
+    status_start_time = time(NULL);
+  }
+
+  // handles messages received over lora
+  // tests whether a new message is available
+  if (rhmesh.available())
+  {
+    uint8_t buf[RH_ROUTER_MAX_MESSAGE_LEN];
+    uint8_t len = sizeof(buf);
+    uint8_t src;
+    uint8_t dest;
+
+    // recvfromAck automatically handles routing, rhmesh will only return true if dest address is this lora
+    if (rhmesh.recvfromAck(buf, &len, &src, &dest) && buf[0] == '$') // checks for start byte
+    {
+      digitalWrite(LED_BUILTIN, LOW);
+
+      MSG_TYPES msg_type = get_msg_type(buf);
+      parse_args_t args = {len, src, dest};
+      switch (msg_type)
+      {
+      case MESSAGE: // receives message and transmits through serial
+      {
+        lora_message_t lora_msg;
+        parse_message(buf, (message_t *)(&lora_msg), args);
+
+        serial_transmit_message_t receive_msg = {(message_header_t){TRANSMIT}, lora_msg.message_len, src}; // message to be transmitted through serial
+        memcpy(receive_msg.message, lora_msg.message, receive_msg.message_len);                            // copy message over
+
+        uint8_t msg_buf[RH_MAX_MESSAGE_LEN];
+        uint8_t msg_len = write_message(msg_buf, (message_t *)(&receive_msg));
+
+        update_display_with_id((char *)receive_msg.message);
+        write_to_serial(msg_buf, msg_len);
+        break;
+      }
+      case DISCOVER: // receives message from another node trying to join network
+      {
+        discover_message_t discover_msg;
+        parse_message(buf, (message_t *)(&discover_msg), args);
+
+        // writes configure network request message to forward
+        config_net_req_t config_net_req_msg = {(config_header_t){(message_header_t){CONFIG}, CONFIG_NETWORK_REQ}, src};
+
+        uint8_t msg_buf[RH_MAX_MESSAGE_LEN];
+        uint8_t msg_len = write_message(msg_buf, (message_t *)(&config_net_req_msg));
+
+        // if this gateway is connected to internet, transmit braodcast message through serial
+        // else, forward message to internet node
+        if (connected_to_internet)
+        {
+          write_to_serial(msg_buf, msg_len); // transmits to sentry to update lora list
+        }
+        else if (connected_to_network)
+        {
+          transmit_lora(msg_buf, msg_len, internet_nodes.at(internet_node_idx)); // forwards message to network
+        }
+        break;
+      }
+      case CONFIG:
+      {
+        CONFIG_TYPES config_type = get_config_type(buf);
+        switch (config_type)
+        {
+        case CONFIG_NETWORK_REQ: // request to add lora network, will only receive if node has internet
+        {
+          write_to_serial(buf, len);
+          break;
+        }
+
+        case CONFIG_NETWORK_ADD: // configures internet nodes based on message received from sentry connected to internet
+        {
+          config_net_add_t config_net_add_msg;
+          parse_message(buf, (message_t *)(&config_net_add_msg), args);
+
+          for (int i = 0; i < config_net_add_msg.internet_nodes_count; i++)
+          {
+            // pushing duplicates causes bugs
+            if (!vector_contains(internet_nodes, config_net_add_msg.internet_nodes[i]))
+            {
+              internet_nodes.push_back(config_net_add_msg.internet_nodes[i]);
+            }
+          }
+          break;
+        }
+        }
+      }
+      case HEALTH_NETWORK: // only internet nodes will receive health network messages, relay to sentry
+      {
+        Serial.write((char *)buf, len);
+        break;
+      }
+      break;
+      }
+      digitalWrite(LED_BUILTIN, HIGH);
+    }
+    else
+    {
+      Serial.println("Did not receive message (might've been routed)");
+    }
+  }
+
+  // handles messages from serial
+  if (check_serial(&serial_device) > 0 && (char)serial_read(serial_device) == START_BYTE)
+  {
+    uint8_t buf[RH_ROUTER_MAX_MESSAGE_LEN];
+    buf[0] = (uint8_t)'$';
+    uint8_t buf_len = read_serial_message(buf + 1, RH_ROUTER_MAX_MESSAGE_LEN, &serial_device) + 1;
+
+    MSG_TYPES message_type = get_msg_type(buf);
+    switch (message_type)
+    {
+    case TRANSMIT: // message to be transmitted from sentry over lora network
+    {
+      serial_transmit_message_t transmit_msg;
+      parse_message(buf, (message_t *)(&transmit_msg), (parse_args_t){buf_len});
+
+      lora_message_t lora_msg = {.header = {MESSAGE}, .message_len = transmit_msg.message_len};
+      memcpy(lora_msg.message, transmit_msg.message, lora_msg.message_len); // copying array
+
+      uint8_t transmit_buf[RH_ROUTER_MAX_MESSAGE_LEN];
+      uint8_t transmit_len = write_message(transmit_buf, (message_t *)(&lora_msg));
+
+      transmit_lora(transmit_buf, transmit_len, transmit_msg.addr);
+      break;
+    }
+    case CONFIG: // config messages
+    {
+      CONFIG_TYPES config_type = get_config_type(buf);
+
+      switch (config_type)
+      {
+      case CONFIG_INTERNET: // configs network status (connected/unconnected)
+      {
+        config_internet_t config_internet_msg;
+        parse_message(buf, (message_t *)(&config_internet_msg), (parse_args_t){});
+        connected_to_internet = (bool)config_internet_msg.network_status; // set connected to internet to 2nd byte in message body
+
+        // will add itself to internet nodes list if connected
+        if (connected_to_internet && !vector_contains(internet_nodes, lora_address))
+        {
+          internet_nodes.push_back(lora_address);
+        } // adds this node to list of internet nodes
+
+        // TODO: send message adding this address to every unconnected lora
+        break;
+      }
+
+      // TODO: confirm network add to new device with response message
+      case CONFIG_NETWORK_ADD: // sends internet nodes to lora requesting connection
+      {
+        if (connected_to_internet)
+        {
+          config_net_add_t config_net_add_msg;
+          parse_message(buf, (message_t *)(&config_net_add_msg), (parse_args_t){});
+          uint8_t dest = config_net_add_msg.dest_address;
+
+          uint8_t msg_buf[RH_MAX_MESSAGE_LEN];
+          uint8_t msg_len = write_message(msg_buf, (message_t *)(&config_net_add_msg));
+          transmit_lora(msg_buf, msg_len, dest);
+        }
+        break;
+      }
+
+      case CONFIG_NET_INFO_REQ:
+      {
+        config_net_info_res_t config_net_info_res_msg = {(config_header_t){(message_header_t){CONFIG}, CONFIG_NET_INFO_REQ},
+                                                         (uint8_t)internet_nodes.size()};
+        for (uint8_t i = 0; i < internet_nodes.size(); i++)
+        {
+          config_net_info_res_msg.internet_nodes[i] = internet_nodes.at(i);
+        }
+
+        uint8_t msg_buf[RH_MAX_MESSAGE_LEN];
+        uint8_t msg_len = write_message(msg_buf, (message_t *)(&config_net_info_res_msg));
+        write_to_serial(msg_buf, msg_len);
+
+        break;
+      }
+      }
+      break;
+    }
+    case INVALID:
+    {
+      Serial.println("Invalid Message Header");
+      break;
+    }
+    }
+  }
+}

@@ -1,0 +1,37 @@
+// LoRa include
+#include <SPI.h>
+#include <LoRa.h>
+
+// display include
+#include <Wire.h>
+
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+
+#include <WiFi.h>
+#include <esp_wifi.h>
+
+void wifi_sniffer_packet_handler(void* buff, wifi_promiscuous_pkt_type_t type) {
+  const wifi_promiscuous_pkt_t *ppkt = (wifi_promiscuous_pkt_t *)buff;
+  const uint8_t *packet = ppkt->payload;
+  char addr[] = "00:00:00:00:00:00";
+  
+  sprintf(addr, "%02x:%02x:%02x:%02x:%02x:%02x",
+          packet[10], packet[11], packet[12], packet[13], packet[14], packet[15]);
+  Serial.println(addr);
+}
+
+void setup() {
+  Serial.begin(9600);
+  WiFi.mode(WIFI_MODE_STA);
+  WiFi.disconnect();
+
+  esp_wifi_set_promiscuous(true);
+  esp_wifi_set_promiscuous_rx_cb(&wifi_sniffer_packet_handler);
+}
+
+void loop() {
+  // Do nothing
+}
+

@@ -1,0 +1,29 @@
+{
+  "title": "lora",
+  "description": "interface with a LoRa radio micro controller",
+  "type": "object",
+  "version": "0.0.0",
+  "required": [
+    "subscribe_to_message"
+  ],
+  "properties": {
+    "height": {
+      "type": "integer",
+      "default": 420
+    },
+    "width": {
+      "type": "integer",
+      "default": 640
+    },
+    "priming_image_path": {
+      "description": "Recommended to leave this blank",
+      "type": "string"
+    },
+    "subscribe_to_message": {
+      "description": "Sensor providing imagery",
+      "type": "string",
+      "$ref": "#/definitions/sensors"
+    }
+  },
+  "additionalProperties": false
+}

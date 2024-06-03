@@ -1,0 +1,7 @@
+{
+    "sensor": {
+        "name": "lora",
+        "module": "lora2",
+        "args": ""
+    }
+}

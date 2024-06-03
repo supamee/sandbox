@@ -1,0 +1,54 @@
+#include <Arduino.h>
+
+// LoRa include
+#include <SPI.h>
+#include <LoRa.h>
+
+// display include
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+// Define OLED PIN
+#define OLED_SDA 21
+#define OLED_SCL 22
+#define OLED_RST -1
+
+Adafruit_SSD1306 display(128, 64, &Wire, OLED_RST);
+
+void setup() {
+  Serial.begin(9600);
+  Serial.println("Setup LoRa Sender....");
+  
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3c)) {  
+    Serial.println(F("SSD1306 allocation failed"));
+    for (;;);  // Don't proceed further, loop forever
+  }
+  
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.println("Hello, World!");
+  display.display();
+  delay(2000);
+  display.println("Hello, World! again");
+  display.display();
+
+  Serial.println("Display initialized");
+}
+
+void loop()   {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 0);
+  
+  display.print("Runtime: ");
+  display.print(millis());
+  display.println(" ms");
+  
+  display.display();
+
+  delay(1000); // Update every second
+}

@@ -1,0 +1,15 @@
+{
+    "sensor": true,
+    "wait_unlock": false,
+    "cache_config": true,
+    "handle_config": false,
+    "fusion": {
+      "dependent_types": [],
+      "take_all": false,
+      "trigger": false
+    },
+    "ittt": {
+      "args": {},
+      "then": "send_all"
+    }
+  }
