@@ -1,0 +1,20 @@
+{
+   "type": "config",
+   "port": 8095,
+   "lables": {
+      "Radiation": {
+         "threshold": 0.8,
+         "color": "red",
+         "disabled": false
+      },
+      "person": {
+         "threshold": 1.0,
+         "color": "blue",
+         "disabled": false
+      }
+   },
+   "camera_address_mapping": {
+      "front": "udp://239.15.105.1:6012",
+      "back": "udp://239.15.105.1:6013"
+   }
+}

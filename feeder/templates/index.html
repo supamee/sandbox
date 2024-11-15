@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amount Viewer</title>
+    <script>
+        async function fetchAmount() {
+            const response = await fetch('/get_amount');
+            const data = await response.json();
+            const amountDisplay = document.getElementById('amountDisplay');
+            if (response.ok) {
+                amountDisplay.textContent = 'Amount: $' + data.amount;
+            } else {
+                amountDisplay.textContent = 'Error: ' + data.error;
+            }
+        }
+    </script>
+</head>
+<body>
+    <h1>Welcome to the Amount Viewer</h1>
+    <button onclick="fetchAmount()">Get Amount</button>
+    <p id="amountDisplay"></p>
+</body>
+</html>
